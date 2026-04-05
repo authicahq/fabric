@@ -1,3 +1,7 @@
+# Pre-commit hooks for Fabric
+# Note: Git hooks path is configured to .githooks for custom pre-push hook
+# Run: git config core.hooksPath .githooks
+
 repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v4.6.0
