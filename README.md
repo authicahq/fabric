@@ -535,8 +535,9 @@ The pre-push hook will:
 
 CI will automatically:
 - Build packages with version from git tag
-- Publish to PyPI when a tag is pushed
-- Create GitHub release with standalone executables
+- Build standalone executables for Linux, macOS, Windows
+- Create GitHub release with all artifacts
+- ~~Publish to PyPI~~ (disabled - see .github/workflows/ci.yml to enable)
 
 #### Version Propagation
 

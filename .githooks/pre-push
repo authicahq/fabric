@@ -50,7 +50,7 @@ while read local_ref local_sha remote_ref remote_sha; do
         fi
         echo -e "${GREEN}✓ Tests passed${NC}"
         
-        echo -e "${GREEN}Tag $tag is ready for push. CI will build package with this version.${NC}"
+        echo -e "${GREEN}Tag $tag is ready for push. CI will build release with this version.${NC}"
         
     elif [[ "$remote_ref" =~ ^refs/heads/ ]]; then
         branch="${remote_ref#refs/heads/}"
