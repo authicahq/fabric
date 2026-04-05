@@ -1,0 +1,82 @@
+#!/bin/bash
+# Pre-push hook for Fabric
+# This hook validates pushes and ensures version tags are properly formatted
+
+set -e
+
+# Colors for output
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+NC='\033[0m' # No Color
+
+echo "Running pre-push hook..."
+
+# Get the current branch and push details
+remote="$1"
+url="$2"
+
+# Read local and remote refs
+while read local_ref local_sha remote_ref remote_sha; do
+    # Check if pushing a tag
+    if [[ "$remote_ref" =~ ^refs/tags/ ]]; then
+        tag="${remote_ref#refs/tags/}"
+        
+        echo -e "${YELLOW}Pushing tag: $tag${NC}"
+        
+        # Validate tag format (should be semver with v prefix: v0.1.0)
+        if [[ ! "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9]+)?$ ]]; then
+            echo -e "${RED}Error: Invalid tag format '$tag'${NC}"
+            echo "Tag must follow semantic versioning with 'v' prefix: v0.1.0, v1.2.3-alpha"
+            exit 1
+        fi
+        
+        echo -e "${GREEN}✓ Tag format is valid${NC}"
+        
+        # Extract version from tag (without 'v' prefix)
+        version="${tag#v}"
+        
+        # Verify pyproject.toml doesn't have a hardcoded version that conflicts
+        if grep -q '^version = ' pyproject.toml 2>/dev/null; then
+            echo -e "${YELLOW}Warning: pyproject.toml has a hardcoded version.${NC}"
+            echo "With hatch-vcs, version is derived from git tags. Consider removing the version field."
+        fi
+        
+        # Check if tests pass
+        echo "Running tests..."
+        if ! python -m pytest tests/unit -q --tb=no --no-header 2>/dev/null; then
+            echo -e "${RED}Error: Tests failed. Please fix before pushing tag.${NC}"
+            exit 1
+        fi
+        echo -e "${GREEN}✓ Tests passed${NC}"
+        
+        echo -e "${GREEN}Tag $tag is ready for push. CI will build package with this version.${NC}"
+        
+    elif [[ "$remote_ref" =~ ^refs/heads/ ]]; then
+        branch="${remote_ref#refs/heads/}"
+        
+        # Only run full validation on main/master branches
+        if [[ "$branch" == "main" || "$branch" == "master" ]]; then
+            echo -e "${YELLOW}Pushing to $branch branch${NC}"
+            
+            # Run linting
+            echo "Running linter..."
+            if ! python -m ruff check src tests --quiet 2>/dev/null; then
+                echo -e "${RED}Error: Linting failed. Run 'make lint-fix' to fix issues.${NC}"
+                exit 1
+            fi
+            echo -e "${GREEN}✓ Linting passed${NC}"
+            
+            # Run tests
+            echo "Running tests..."
+            if ! python -m pytest tests/unit -q --tb=no --no-header 2>/dev/null; then
+                echo -e "${RED}Error: Tests failed.${NC}"
+                exit 1
+            fi
+            echo -e "${GREEN}✓ Tests passed${NC}"
+        fi
+    fi
+done
+
+echo -e "${GREEN}Pre-push checks complete.${NC}"
+exit 0

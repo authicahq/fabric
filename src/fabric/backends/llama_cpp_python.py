@@ -1,0 +1,94 @@
+"""llama-cpp-python backend implementation."""
+
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+
+from ..core.logging import get_logger
+from .base import Backend, BackendDiscoveryConfig, BackendResult
+
+if TYPE_CHECKING:
+    from pathlib import Path
+
+    from ..core.models import LlamaCppPythonConfig, ModelGroup
+
+logger = get_logger(__name__)
+
+
+class LlamaCppPythonBackend(Backend):
+    """Backend for llama-cpp-python API server.
+
+    llama-cpp-python is a Python binding for llama.cpp that runs as an API server.
+    This backend creates symlinks to model files that the server can access.
+    """
+
+    discovery_config = BackendDiscoveryConfig(
+        name="llama_cpp_python",
+        backend_type="llama_cpp_python",
+        search_paths=[
+            "{HOME}/llama-cpp-python",
+        ],
+        executables=["llama-cpp-python", "python"],
+        default_models_subdir="models",
+        ports=(8000, 8010),
+    )
+
+    def __init__(self, config: LlamaCppPythonConfig) -> None:
+        super().__init__(config)
+        self.lcpp_config = config
+
+    @property
+    def name(self) -> str:
+        return "llama-cpp-python"
+
+    def setup(self) -> None:
+        super().setup()
+
+        if not self.config.enabled:
+            return
+
+        self.models_dir = self.output_dir
+        self._ensure_dir(self.models_dir)
+
+    def sync_group(
+        self,
+        group: ModelGroup,
+        source_dir: Path,
+        context_size: int | None = None,
+        gpu_layers: int | None = None,
+        threads: int | None = None,
+    ) -> BackendResult:
+        """Sync a model group to llama-cpp-python backend.
+
+        Args:
+            group: Model group to sync
+            source_dir: Source directory (ground truth)
+            context_size: Optional context size override
+            gpu_layers: Optional GPU layers override
+            threads: Optional threads override
+
+        Returns:
+            BackendResult with operation results
+        """
+        if not self.config.enabled:
+            return BackendResult(success=True, skipped=1)
+
+        model_dir = self.models_dir / group.model_id
+        self._ensure_dir(model_dir)
+
+        return self._link_model_files(group, model_dir, source_dir)
+
+    def remove_group(self, model_id: str) -> BackendResult:
+        result = BackendResult(success=True)
+
+        model_dir = self.models_dir / model_id
+        if model_dir.exists():
+            if self._remove_path(model_dir):
+                result.removed += 1
+            else:
+                result.errors.append(f"Failed to remove {model_dir}")
+
+        return result
+
+    def cleanup_orphans(self, valid_model_ids: set[str]) -> BackendResult:
+        return self._cleanup_orphans_simple(self.models_dir, valid_model_ids)

@@ -1,0 +1,272 @@
+"""KoboldCpp backend implementation."""
+
+from __future__ import annotations
+
+import json
+from typing import TYPE_CHECKING
+
+from ..core.logging import get_logger
+from ..core.models import GGUFMetadata, KoboldCppConfig, ModelGroup
+from .base import Backend, BackendDiscoveryConfig, BackendResult, SyncAction
+
+if TYPE_CHECKING:
+    from pathlib import Path
+
+logger = get_logger(__name__)
+
+
+class KoboldCppBackend(Backend):
+    """Backend for KoboldCpp model organization.
+
+    KoboldCpp uses .kcpps sidecar config files alongside model files.
+    This backend creates symlinks and generates .kcpps files.
+    """
+
+    discovery_config = BackendDiscoveryConfig(
+        name="koboldcpp",
+        backend_type="koboldcpp",
+        search_paths=[
+            "{HOME}/koboldcpp",
+            "/opt/koboldcpp",
+        ],
+        executables=["koboldcpp"],
+        default_models_subdir=".",
+        ports=(5001, 5010),
+    )
+
+    def __init__(self, config: KoboldCppConfig) -> None:
+        """Initialize KoboldCpp backend.
+
+        Args:
+            config: KoboldCpp configuration
+        """
+        super().__init__(config)
+        self.koboldcpp_config = config
+
+    @property
+    def name(self) -> str:
+        """Return backend name."""
+        return "KoboldCpp"
+
+    def setup(self) -> None:
+        """Setup KoboldCpp backend directories."""
+        super().setup()
+
+        if not self.config.enabled:
+            return
+
+        self.models_dir = self.output_dir
+        self._ensure_dir(self.models_dir)
+
+    def sync_group(
+        self,
+        group: ModelGroup,
+        source_dir: Path,
+        context_size: int | None = None,
+    ) -> BackendResult:
+        """Sync a model group to KoboldCpp backend.
+
+        Creates symlinks and .kcpps config files.
+
+        Args:
+            group: Model group to sync
+            source_dir: Source directory (ground truth)
+            context_size: Optional context size override
+            gpu_layers: Optional GPU layers override
+            threads: Optional threads override
+        Returns:
+            BackendResult with operation results
+        """
+        """Sync a model group to KoboldCpp backend.
+
+        Creates symlinks and generates .kcpps sidecar files.
+
+        Args:
+            group: Model group to sync
+            source_dir: Source directory (ground truth)
+
+        Returns:
+            BackendResult with operation results
+        """
+        if not self.config.enabled:
+            return BackendResult(success=True, skipped=1)
+
+        result = BackendResult(success=True)
+        model_id = group.model_id
+
+        # KoboldCpp uses flat directory structure
+        model_subdir = self.models_dir / model_id
+        self._ensure_dir(model_subdir)
+
+        # Link all model files
+        for model_file in group.files:
+            if not model_file.path.is_relative_to(source_dir):
+                logger.warning(
+                    "File not in source directory, skipping",
+                    file=model_file.name,
+                    source=str(source_dir),
+                )
+                result.skipped += 1
+                continue
+
+            target = model_subdir / model_file.name
+            link_result = self._create_link(
+                model_file.path,
+                target,
+                prefer_hardlink=self.config.prefer_hardlinks,
+            )
+
+            if link_result.success:
+                if link_result.action == SyncAction.CREATE:
+                    result.linked += 1
+                elif link_result.action == SyncAction.SKIP:
+                    result.skipped += 1
+                elif link_result.action == SyncAction.UPDATE:
+                    result.updated += 1
+            else:
+                result.errors.append(link_result.error or "Unknown error")
+
+        # Link mmproj if present
+        if group.mmproj_file:
+            mmproj_target = model_subdir / group.mmproj_file.name
+            link_result = self._create_link(
+                group.mmproj_file.path,
+                mmproj_target,
+                prefer_hardlink=self.config.prefer_hardlinks,
+            )
+
+            if link_result.success and link_result.action == SyncAction.CREATE:
+                result.linked += 1
+
+        # Generate .kcpps file if enabled
+        if self.koboldcpp_config.generate_kcpps:
+            self._generate_kcpps(group, context_size)
+
+        return result
+
+    def remove_group(self, model_id: str) -> BackendResult:
+        """Remove a model group from KoboldCpp backend.
+
+        Args:
+            model_id: Normalized model ID to remove
+
+        Returns:
+            BackendResult with operation results
+        """
+        result = BackendResult(success=True)
+
+        # Remove model directory
+        model_subdir = self.models_dir / model_id
+        if model_subdir.exists():
+            if self._remove_path(model_subdir):
+                result.removed += 1
+            else:
+                result.errors.append(f"Failed to remove {model_subdir}")
+
+        return result
+
+    def _generate_kcpps(self, group: ModelGroup, context_size: int | None = None) -> None:
+        """Generate .kcpps sidecar config for KoboldCpp.
+
+        Args:
+            group: Model group
+            context_size: Optional context size override
+        """
+        model_id = group.model_id
+        primary = group.primary_file
+
+        if not primary:
+            logger.warning("No primary file for group", model_id=model_id)
+            return
+
+        metadata = primary.metadata or GGUFMetadata()
+        kcpps_path = self.models_dir / f"{model_id}.kcpps"
+
+        # Load existing config to preserve user settings
+        existing = self._load_existing_config(kcpps_path, "json")
+        self.logger.debug(
+            "KoboldCpp config resolution",
+            model=model_id,
+            existing=existing is not None,
+            context_size=context_size,
+            config_context_size=self.config.context_size,
+            metadata_context_length=metadata.context_length,
+            gpu_layers=self.config.gpu_layers,
+        )
+
+        # Get context size: param > config > metadata > -1 (unlimited)
+        effective_context_size = (
+            context_size or self.config.context_size or metadata.context_length or -1
+        )
+
+        # Build default config (KoboldCpp uses JSON-like format saved as .kcpps)
+        defaults = {
+            "model_param": f"./{primary.name}",
+            "contextsize": effective_context_size,
+            "gpulayers": self.config.gpu_layers,
+            "threads": self.koboldcpp_config.default_threads,
+            "use_mmap": True,
+            "use_flash_attention": True,
+        }
+
+        if group.mmproj_file:
+            defaults["mmproj_param"] = f"./{group.mmproj_file.name}"
+
+        if metadata.stop_tokens and not existing:
+            defaults["stop"] = metadata.stop_tokens
+
+        # Merge with existing, preserving user values
+        protected = {
+            "model_param",
+            "contextsize",
+            "gpulayers",
+            "threads",
+            "use_mmap",
+            "use_flash_attention",
+            "mmproj_param",
+            "stop",
+        }
+        config = self._merge_config(existing, defaults, protected)
+
+        with open(kcpps_path, "w", encoding="utf-8") as f:
+            json.dump(config, f, indent=2)
+
+        self._set_permissions(kcpps_path)
+        logger.debug("Generated .kcpps config", path=str(kcpps_path))
+
+    def cleanup_orphans(self, valid_model_ids: set[str]) -> BackendResult:
+        """Remove orphaned model directories not in valid set.
+
+        Args:
+            valid_model_ids: Set of valid model IDs
+
+        Returns:
+            BackendResult with cleanup results
+        """
+        result = BackendResult(success=True)
+
+        if not self.models_dir.exists():
+            return result
+
+        # Cleanup model directories
+        for item in self.models_dir.iterdir():
+            if not item.is_dir():
+                continue
+
+            if item.name not in valid_model_ids:
+                if self._remove_path(item):
+                    result.removed += 1
+                else:
+                    result.errors.append(f"Failed to remove orphan: {item}")
+
+        # Cleanup .kcpps files
+        for kcpps_file in self.models_dir.glob("*.kcpps"):
+            model_id = kcpps_file.stem
+
+            if model_id not in valid_model_ids:
+                if self._remove_path(kcpps_file):
+                    result.removed += 1
+                else:
+                    result.errors.append(f"Failed to remove orphan .kcpps: {kcpps_file}")
+
+        return result
