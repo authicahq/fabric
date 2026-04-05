@@ -452,6 +452,12 @@ launchctl start fabric
 git clone https://github.com/authicahq/fabric
 cd fabric
 
+# Run setup script (configures git hooks)
+./scripts/setup-hooks.sh
+
+# Or manually configure hooks:
+git config core.hooksPath .githooks
+
 # Create uv environment and install dependencies
 make uv-install-dev
 # Or manually:
@@ -499,6 +505,49 @@ make build
 # Using Nuitka
 make build-nuitka
 ```
+
+### Version Management and Releases
+
+Fabric uses **git tags** for version management with `hatch-vcs`. The version is automatically derived from the latest git tag.
+
+#### Creating a Release
+
+1. **Ensure all changes are committed and tests pass:**
+   ```bash
+   make test
+   make lint
+   ```
+
+2. **Create a version tag** (follow semantic versioning with `v` prefix):
+   ```bash
+   git tag -a v0.1.0 -m "Release v0.1.0"
+   ```
+
+3. **Push the tag** to trigger CI/CD:
+   ```bash
+   git push origin main --follow-tags
+   ```
+
+The pre-push hook will:
+- Validate tag format (must be `vX.Y.Z`, e.g., `v0.1.0`)
+- Run tests before pushing tags
+- Run linting before pushing to main
+
+CI will automatically:
+- Build packages with version from git tag
+- Publish to PyPI when a tag is pushed
+- Create GitHub release with standalone executables
+
+#### Version Propagation
+
+The version flows through the system as follows:
+
+1. **Git tag** (e.g., `v0.1.0`) → 
+2. **hatch-vcs** extracts version during build →
+3. **Package metadata** is set with the version →
+4. **`fabric --version`** displays the correct version
+
+No manual version updates in code are needed!
 
 ## Project Structure
 
