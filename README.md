@@ -1,5 +1,12 @@
 # Fabric
 
+[![CI](https://github.com/authicahq/fabric/actions/workflows/ci.yml/badge.svg)](https://github.com/authicahq/fabric/actions/workflows/ci.yml)
+[![Release](https://github.com/authicahq/fabric/actions/workflows/release.yml/badge.svg)](https://github.com/authicahq/fabric/actions/workflows/release.yml)
+[![Version](https://img.shields.io/github/v/release/authicahq/fabric?include_prereleases)](https://github.com/authicahq/fabric/releases)
+[![Python](https://img.shields.io/badge/python-3.10%20%7C%203.11%20%7C%203.12%20%7C%203.13-blue)](https://www.python.org/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Code style: Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)](https://github.com/astral-sh/ruff)
+
 Cross-platform model linker for LLM inference engines. Automatically synchronizes GGUF model files across multiple backends including llama.cpp, LocalAI, LM Studio, Ollama, and more.
 
 ## Features
