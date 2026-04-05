@@ -211,7 +211,7 @@ class DownloadDetector:
             if pending.real_name:
                 paths.add(pending.path.parent / pending.real_name)
         return paths
-    
+
     def is_tracked(self, path: Path) -> bool:
         """Check if a path is already being tracked as a pending download."""
         return path in self._pending
@@ -330,14 +330,14 @@ class ModelEventHandler(FileSystemEventHandler):
         if event.is_directory:
             logger.debug("Ignoring directory creation", path=event.src_path)
             return
-        
+
         path = Path(event.src_path)
-        
+
         # Check cooldown (for multi-source mode)
         if self.cooldown_manager and self.cooldown_manager.is_in_cooldown(path):
             logger.debug("Ignoring self-triggered create event (cooldown)", path=str(path))
             return
-        
+
         logger.debug("File created event", path=event.src_path)
         self._handle_file_event(event, SyncEventType.FILE_CREATED)
 
@@ -345,14 +345,14 @@ class ModelEventHandler(FileSystemEventHandler):
         """Handle file modification."""
         if event.is_directory:
             return
-        
+
         path = Path(event.src_path)
-        
+
         # Check cooldown (for multi-source mode)
         if self.cooldown_manager and self.cooldown_manager.is_in_cooldown(path):
             logger.debug("Ignoring self-triggered modify event (cooldown)", path=str(path))
             return
-        
+
         logger.debug("File modified event", path=event.src_path)
         self._handle_file_event(event, SyncEventType.FILE_MODIFIED)
 

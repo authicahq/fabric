@@ -20,7 +20,7 @@ _verbose_enabled = False
 
 def set_verbose(enabled: bool) -> None:
     """Set the global verbose state.
-    
+
     Args:
         enabled: Whether verbose mode is enabled
     """
@@ -30,7 +30,7 @@ def set_verbose(enabled: bool) -> None:
 
 def is_verbose() -> bool:
     """Check if verbose mode is enabled.
-    
+
     Returns:
         True if verbose mode is enabled
     """
@@ -51,7 +51,7 @@ def setup_logging(
     """
     # Store verbose state globally
     set_verbose(verbose)
-    
+
     # Install rich traceback handler for better error display
     install_rich_traceback(console=_console, show_locals=verbose)
 

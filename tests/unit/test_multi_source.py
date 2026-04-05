@@ -2,13 +2,9 @@
 
 from __future__ import annotations
 
-import json
-import os
-import tempfile
-import threading
 import time
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -17,8 +13,8 @@ from fabric.core.conflict_resolver import (
     ConflictPreservationHandler,
 )
 from fabric.core.cooldown import SyncCooldownManager
-from fabric.core.models import BackendConfig, normalize_model_id
-from fabric.core.origin_tracker import ModelOrigin, OriginTracker
+from fabric.core.models import normalize_model_id
+from fabric.core.origin_tracker import OriginTracker
 from fabric.core.unified_index import ModelInstance, UnifiedIndex, UnifiedModelEntry
 
 
@@ -237,11 +233,11 @@ class TestUnifiedIndex:
         backend_a = MagicMock()
         backend_a.output_dir = tmp_path / "backend_a"
         backend_a.output_dir.mkdir()
-        
+
         backend_b = MagicMock()
         backend_b.output_dir = tmp_path / "backend_b"
         backend_b.output_dir.mkdir()
-        
+
         return {"backend_a": backend_a, "backend_b": backend_b}
 
     def test_build_index_empty(self, mock_backends):
@@ -256,10 +252,10 @@ class TestUnifiedIndex:
         (mock_backends["backend_a"].output_dir / "model1.gguf").write_text("content1")
         (mock_backends["backend_b"].output_dir / "model1.gguf").write_text("content1")
         (mock_backends["backend_a"].output_dir / "model2.gguf").write_text("content2")
-        
+
         index = UnifiedIndex(mock_backends)
         index.build()
-        
+
         assert len(index.entries) == 2
         assert "model1" in index.entries
         assert "model2" in index.entries
@@ -271,10 +267,10 @@ class TestUnifiedIndex:
         # Create conflicting files (same name, different content)
         (mock_backends["backend_a"].output_dir / "model.gguf").write_text("content_a")
         (mock_backends["backend_b"].output_dir / "model.gguf").write_text("content_b")
-        
+
         index = UnifiedIndex(mock_backends)
         index.build()
-        
+
         conflicts = index.get_conflicts()
         assert len(conflicts) == 1
         assert conflicts[0].model_id == "model"
@@ -288,7 +284,7 @@ class TestUnifiedIndex:
     def test_add_and_remove_instance(self):
         """Test adding and removing instances."""
         index = UnifiedIndex({})
-        
+
         instance = ModelInstance(
             path=Path("/a/model.gguf"),
             backend_id="backend_a",
@@ -297,11 +293,11 @@ class TestUnifiedIndex:
             mtime=100.0,
             size=1000,
         )
-        
+
         index.add_instance("test-model", instance)
         assert "test-model" in index.entries
         assert len(index.entries["test-model"].instances) == 1
-        
+
         index.remove_instance("test-model", "backend_a")
         assert "test-model" not in index.entries
 
@@ -322,7 +318,7 @@ class TestOriginTracker:
             original_path=Path("/a/model.gguf"),
         )
         assert result is True
-        
+
         origin = tracker.get_origin("test-model")
         assert origin is not None
         assert origin.backend_id == "backend_a"
@@ -334,7 +330,7 @@ class TestOriginTracker:
             backend_id="backend_a",
             original_path=Path("/a/model.gguf"),
         )
-        
+
         # Second call should return False (not a new origin)
         result = tracker.record_origin(
             model_id="test-model",
@@ -342,7 +338,7 @@ class TestOriginTracker:
             original_path=Path("/b/model.gguf"),
         )
         assert result is False
-        
+
         # Origin should still be backend_a
         origin = tracker.get_origin("test-model")
         assert origin.backend_id == "backend_a"
@@ -354,7 +350,7 @@ class TestOriginTracker:
             backend_id="backend_a",
             original_path=Path("/a/model.gguf"),
         )
-        
+
         assert tracker.is_origin("test-model", "backend_a")
         assert not tracker.is_origin("test-model", "backend_b")
         assert not tracker.is_origin("unknown-model", "backend_a")
@@ -366,10 +362,10 @@ class TestOriginTracker:
             backend_id="backend_a",
             original_path=Path("/a/model.gguf"),
         )
-        
+
         result = tracker.update_origin_backend("test-model", "backend_b")
         assert result is True
-        
+
         origin = tracker.get_origin("test-model")
         assert origin.backend_id == "backend_b"
 
@@ -380,7 +376,7 @@ class TestOriginTracker:
             backend_id="backend_a",
             original_path=Path("/a/model.gguf"),
         )
-        
+
         result = tracker.remove_origin("test-model")
         assert result is True
         assert tracker.get_origin("test-model") is None
@@ -393,11 +389,11 @@ class TestOriginTracker:
             backend_id="backend_a",
             original_path=Path("/a/model.gguf"),
         )
-        
+
         # Create new tracker instance (simulates restart)
         tracker2 = OriginTracker(tmp_path / ".fabric")
         origin = tracker2.get_origin("test-model")
-        
+
         assert origin is not None
         assert origin.backend_id == "backend_a"
 
@@ -433,7 +429,7 @@ class TestConflictPreservationHandler:
         new_file = tmp_path / "backend_b" / "test-model.gguf"
         new_file.parent.mkdir()
         new_file.write_text("different content")
-        
+
         instance = ModelInstance(
             path=new_file,
             backend_id="backend_b",
@@ -442,14 +438,14 @@ class TestConflictPreservationHandler:
             mtime=200.0,
             size=2000,
         )
-        
+
         success = handler.handle_conflict(instance, mock_entry)
-        
+
         assert success is True
         # File should NOT be renamed - left in place for safety
         assert new_file.exists()
         assert new_file.name == "test-model.gguf"
-        
+
         # But conflict should be recorded in database
         conflicts = handler.get_unresolved_conflicts()
         assert len(conflicts) == 1
@@ -467,7 +463,7 @@ class TestConflictDatabase:
     def test_add_conflict(self, db):
         """Test adding a conflict."""
         from fabric.core.unified_index import ModelInstance
-        
+
         new_instance = ModelInstance(
             path=Path("/b/model.gguf"),
             backend_id="backend_b",
@@ -486,9 +482,9 @@ class TestConflictDatabase:
                 size=1000,
             )
         ]
-        
+
         db.add_conflict("test-model", new_instance, existing_instances)
-        
+
         unresolved = db.get_unresolved()
         assert len(unresolved) == 1
         assert unresolved[0].model_id == "test-model"
@@ -497,7 +493,7 @@ class TestConflictDatabase:
     def test_resolve_conflict(self, db):
         """Test resolving a conflict."""
         from fabric.core.unified_index import ModelInstance
-        
+
         db.add_conflict(
             "test-model",
             ModelInstance(
@@ -519,13 +515,13 @@ class TestConflictDatabase:
                 )
             ],
         )
-        
+
         result = db.resolve_conflict("test-model", "keep_newest", "backend_a")
         assert result is True
-        
+
         unresolved = db.get_unresolved()
         assert len(unresolved) == 0
-        
+
         record = db.get_record("test-model")
         assert record.status == "resolved"
         assert record.resolution == "keep_newest"
@@ -533,7 +529,7 @@ class TestConflictDatabase:
     def test_persistence(self, tmp_path):
         """Test that conflicts are persisted to disk."""
         from fabric.core.unified_index import ModelInstance
-        
+
         db1 = ConflictDatabase(tmp_path / ".fabric")
         db1.add_conflict(
             "test-model",
@@ -556,11 +552,11 @@ class TestConflictDatabase:
                 )
             ],
         )
-        
+
         # Create new database instance (simulates restart)
         db2 = ConflictDatabase(tmp_path / ".fabric")
         unresolved = db2.get_unresolved()
-        
+
         assert len(unresolved) == 1
         assert unresolved[0].model_id == "test-model"
 
@@ -571,36 +567,36 @@ class TestSyncCooldownManager:
     def test_enter_and_check_cooldown(self, tmp_path):
         """Test entering and checking cooldown."""
         manager = SyncCooldownManager(cooldown_seconds=0.1)
-        
+
         test_file = tmp_path / "test.gguf"
         test_file.write_text("test")
-        
+
         # Should not be in cooldown initially
         assert not manager.is_in_cooldown(test_file)
-        
+
         # Enter cooldown
         manager.enter_cooldown(test_file, "test_backend")
-        
+
         # Should be in cooldown now
         assert manager.is_in_cooldown(test_file)
-        
+
         # Wait for cooldown to expire
         time.sleep(0.15)
-        
+
         # Should not be in cooldown anymore
         assert not manager.is_in_cooldown(test_file)
 
     def test_different_files_independent(self, tmp_path):
         """Test that different files have independent cooldowns."""
         manager = SyncCooldownManager(cooldown_seconds=0.1)
-        
+
         file1 = tmp_path / "file1.gguf"
         file2 = tmp_path / "file2.gguf"
         file1.write_text("content1")
         file2.write_text("content2")
-        
+
         manager.enter_cooldown(file1, "backend_a")
-        
+
         # file1 should be in cooldown
         assert manager.is_in_cooldown(file1)
         # file2 should not be in cooldown
@@ -609,30 +605,30 @@ class TestSyncCooldownManager:
     def test_clear(self, tmp_path):
         """Test clearing all cooldowns."""
         manager = SyncCooldownManager(cooldown_seconds=10.0)
-        
+
         test_file = tmp_path / "test.gguf"
         test_file.write_text("test")
-        
+
         manager.enter_cooldown(test_file, "test_backend")
         assert manager.is_in_cooldown(test_file)
-        
+
         manager.clear()
         assert not manager.is_in_cooldown(test_file)
 
     def test_get_active_count(self, tmp_path):
         """Test getting active cooldown count."""
         manager = SyncCooldownManager(cooldown_seconds=10.0)
-        
+
         assert manager.get_active_count() == 0
-        
+
         file1 = tmp_path / "file1.gguf"
         file2 = tmp_path / "file2.gguf"
         file1.write_text("content1")
         file2.write_text("content2")
-        
+
         manager.enter_cooldown(file1, "backend_a")
         assert manager.get_active_count() == 1
-        
+
         manager.enter_cooldown(file2, "backend_b")
         assert manager.get_active_count() == 2
 

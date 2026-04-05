@@ -314,7 +314,7 @@ class Backend(ABC):
     def name(self) -> str:
         """Return the backend name."""
         pass
-    
+
     @property
     def backend_id(self) -> str:
         """Return the unique backend ID for multi-source mode."""

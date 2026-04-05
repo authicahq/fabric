@@ -3,8 +3,7 @@
 from __future__ import annotations
 
 import time
-from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -17,7 +16,6 @@ from fabric.core.models import (
     SyncMode,
 )
 from fabric.core.multi_sync import MultiSourceSyncEngine
-from fabric.core.sync import SyncEngine
 
 
 @pytest.fixture
@@ -81,9 +79,9 @@ class TestMultiSourceSyncEngine:
         """Test full sync with empty backends."""
         engine = MultiSourceSyncEngine(multi_source_config, mock_backends)
         engine.setup()
-        
+
         result = engine.full_sync()
-        
+
         assert result.success
         assert result.linked == 0
         assert result.conflicts == 0
@@ -93,21 +91,21 @@ class TestMultiSourceSyncEngine:
         # Create a model in one backend
         model_file = mock_backends[0].output_dir / "test-model.gguf"
         model_file.write_text("test content")
-        
+
         engine = MultiSourceSyncEngine(multi_source_config, mock_backends)
         engine.setup()
-        
+
         result = engine.full_sync()
-        
+
         assert result.success
         # Should create hardlinks in other backends
         assert result.linked > 0
-        
+
         # Verify hardlink was created
         other_backend = mock_backends[1]
         hardlink_file = other_backend.output_dir / "test-model.gguf"
         assert hardlink_file.exists()
-        
+
         # Verify they have same inode
         assert model_file.stat().st_ino == hardlink_file.stat().st_ino
 
@@ -116,18 +114,18 @@ class TestMultiSourceSyncEngine:
         # Create conflicting models
         model_a = mock_backends[0].output_dir / "test-model.gguf"
         model_a.write_text("content A")
-        
+
         model_b = mock_backends[1].output_dir / "test-model.gguf"
         model_b.write_text("content B")  # Different content
-        
+
         engine = MultiSourceSyncEngine(multi_source_config, mock_backends)
         engine.setup()
-        
+
         result = engine.full_sync()
-        
+
         # Should detect the conflict
         assert result.conflicts == 1
-        
+
         # Verify conflict is recorded
         conflicts = engine.conflict_handler.get_unresolved_conflicts()
         assert len(conflicts) == 1
@@ -136,29 +134,29 @@ class TestMultiSourceSyncEngine:
     def test_handle_event_new_model(self, multi_source_config, mock_backends):
         """Test handling a new model event."""
         from fabric.core.models import SyncEvent, SyncEventType
-        
+
         engine = MultiSourceSyncEngine(multi_source_config, mock_backends)
         engine.setup()
-        
+
         # Create a model file
         model_file = mock_backends[0].output_dir / "new-model.gguf"
         model_file.write_text("new content")
-        
+
         # Create event
         event = SyncEvent(
             event_type=SyncEventType.FILE_CREATED,
             path=model_file,
             source_dir=mock_backends[0].output_dir,
         )
-        
+
         result = engine.handle_event(event)
-        
+
         # Wait for cooldown
         time.sleep(0.1)
-        
+
         assert result.success
         assert result.linked > 0
-        
+
         # Verify hardlink in other backend
         other_backend = mock_backends[1]
         hardlink_file = other_backend.output_dir / "new-model.gguf"
@@ -166,42 +164,43 @@ class TestMultiSourceSyncEngine:
 
     def test_handle_event_conflict(self, multi_source_config, mock_backends):
         """Test handling an event that creates a conflict."""
-        from fabric.core.models import SyncEvent, SyncEventType
         import time
-        
+
+        from fabric.core.models import SyncEvent, SyncEventType
+
         engine = MultiSourceSyncEngine(multi_source_config, mock_backends)
         engine.setup()
-        
+
         # Create initial model in backend A
         model_a = mock_backends[0].output_dir / "conflict-model.gguf"
         model_a.write_text("content A")
-        
+
         engine.full_sync()
-        
+
         # Wait for cooldown to expire
         time.sleep(0.1)
-        
+
         # Delete the hardlinked file in backend B and create different content
         model_b = mock_backends[1].output_dir / "conflict-model.gguf"
         if model_b.exists():
             model_b.unlink()
         model_b.write_text("content B")
-        
+
         event = SyncEvent(
             event_type=SyncEventType.FILE_CREATED,
             path=model_b,
             source_dir=mock_backends[1].output_dir,
         )
-        
+
         result = engine.handle_event(event)
-        
+
         # Should detect conflict
         assert result.conflicts == 1
-        
+
         # Original file should remain (NOT renamed to avoid disrupting backends)
         assert model_b.exists()
         assert model_b.name == "conflict-model.gguf"
-        
+
         # Conflict should be recorded in database
         conflicts = engine.conflict_handler.get_unresolved_conflicts()
         assert len(conflicts) == 1
@@ -210,14 +209,14 @@ class TestMultiSourceSyncEngine:
     def test_cooldown_prevents_circular_sync(self, multi_source_config, mock_backends):
         """Test that cooldown prevents circular sync loops."""
         from fabric.core.models import SyncEvent, SyncEventType
-        
+
         engine = MultiSourceSyncEngine(multi_source_config, mock_backends)
         engine.setup()
-        
+
         # Create a model
         model_file = mock_backends[0].output_dir / "cooldown-test.gguf"
         model_file.write_text("test content")
-        
+
         # First event should be processed
         event1 = SyncEvent(
             event_type=SyncEventType.FILE_CREATED,
@@ -225,7 +224,7 @@ class TestMultiSourceSyncEngine:
             source_dir=mock_backends[0].output_dir,
         )
         engine.handle_event(event1)
-        
+
         # Immediately send another event for the hardlinked file
         hardlink_file = mock_backends[1].output_dir / "cooldown-test.gguf"
         if hardlink_file.exists():
@@ -235,28 +234,28 @@ class TestMultiSourceSyncEngine:
                 source_dir=mock_backends[1].output_dir,
             )
             result = engine.handle_event(event2)
-            
+
             # Should be ignored due to cooldown
             assert result.linked == 0
 
     def test_origin_tracking(self, multi_source_config, mock_backends):
         """Test that model origins are correctly tracked."""
         from fabric.core.models import SyncEvent, SyncEventType
-        
+
         engine = MultiSourceSyncEngine(multi_source_config, mock_backends)
         engine.setup()
-        
+
         model_file = mock_backends[0].output_dir / "origin-test.gguf"
         model_file.write_text("test content")
-        
+
         event = SyncEvent(
             event_type=SyncEventType.FILE_CREATED,
             path=model_file,
             source_dir=mock_backends[0].output_dir,
         )
-        
+
         engine.handle_event(event)
-        
+
         # Verify origin was recorded
         origin = engine.origin_tracker.get_origin("origin-test")
         assert origin is not None
@@ -269,7 +268,7 @@ class TestMultiSourceSyncEngine:
     def test_effective_source_dirs(self, multi_source_config, mock_backends):
         """Test that effective source dirs include all backend dirs."""
         source_dirs = multi_source_config.effective_source_dirs
-        
+
         # Should include both enabled backend directories
         assert len(source_dirs) == 2
         assert mock_backends[0].output_dir in source_dirs
@@ -282,14 +281,14 @@ class TestMultiSourceWithConflicts:
     def test_conflict_preservation_records_only(self, multi_source_config, mock_backends):
         """Test that conflicts are recorded but files are NOT renamed."""
         from fabric.core.unified_index import ModelInstance, UnifiedModelEntry
-        
+
         engine = MultiSourceSyncEngine(multi_source_config, mock_backends)
         engine.setup()
-        
+
         # Create existing model
         existing_file = mock_backends[0].output_dir / "test-model.gguf"
         existing_file.write_text("existing content")
-        
+
         existing_entry = UnifiedModelEntry(model_id="test-model")
         existing_entry.add_instance(ModelInstance(
             path=existing_file,
@@ -299,11 +298,11 @@ class TestMultiSourceWithConflicts:
             mtime=existing_file.stat().st_mtime,
             size=existing_file.stat().st_size,
         ))
-        
+
         # Create conflicting new model
         new_file = mock_backends[1].output_dir / "test-model.gguf"
         new_file.write_text("new content")
-        
+
         new_instance = ModelInstance(
             path=new_file,
             backend_id=mock_backends[1].backend_id,
@@ -312,17 +311,17 @@ class TestMultiSourceWithConflicts:
             mtime=new_file.stat().st_mtime,
             size=new_file.stat().st_size,
         )
-        
+
         # Handle conflict
         success = engine.conflict_handler.handle_conflict(
             new_instance, existing_entry
         )
-        
+
         assert success is True
         # File should NOT be renamed - left in place
         assert new_file.exists()
         assert new_file.name == "test-model.gguf"
-        
+
         # But conflict should be recorded
         conflicts = engine.conflict_handler.get_unresolved_conflicts()
         assert len(conflicts) == 1
@@ -331,13 +330,13 @@ class TestMultiSourceWithConflicts:
     def test_conflict_database_records_all_instances(self, multi_source_config, mock_backends):
         """Test that conflict database records all instances."""
         from fabric.core.unified_index import ModelInstance, UnifiedModelEntry
-        
+
         engine = MultiSourceSyncEngine(multi_source_config, mock_backends)
         engine.setup()
-        
+
         # Create entry with multiple instances
         entry = UnifiedModelEntry(model_id="multi-conflict")
-        
+
         for i, backend in enumerate(mock_backends):
             file_path = backend.output_dir / f"multi-conflict-v{i}.gguf"
             file_path.write_text(f"content {i}")
@@ -349,7 +348,7 @@ class TestMultiSourceWithConflicts:
                 mtime=file_path.stat().st_mtime,
                 size=file_path.stat().st_size,
             ))
-        
+
         # Add conflict
         new_file = mock_backends[0].output_dir / "multi-conflict.conflict.test.gguf"
         new_file.write_text("conflict content")
@@ -361,9 +360,9 @@ class TestMultiSourceWithConflicts:
             mtime=new_file.stat().st_mtime,
             size=new_file.stat().st_size,
         )
-        
+
         engine.conflict_handler.handle_conflict(new_instance, entry)
-        
+
         # Verify database
         conflicts = engine.conflict_handler.get_unresolved_conflicts()
         assert len(conflicts) == 1
@@ -380,13 +379,13 @@ class TestMultiSourceFilesystemVerification:
         config = MagicMock()
         config.sync.metadata_dir = tmp_path / ".fabric"
         config.sync.cooldown_seconds = 0.1
-        
+
         backend = MagicMock()
         backend.output_dir = tmp_path / "backend"
         backend.output_dir.mkdir()
         backend.backend_id = "test"
-        
+
         engine = MultiSourceSyncEngine(config, [backend])
-        
+
         # Should not raise for same filesystem
         engine._verify_filesystem()

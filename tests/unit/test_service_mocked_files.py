@@ -37,9 +37,12 @@ class TestServiceInstallerSystemdInstall:
         mock_run.return_value = MagicMock(returncode=0)
 
         m = mock_open()
-        with patch("builtins.open", m), patch("os.chmod") as mock_chmod:
-            with patch("pathlib.Path.exists", return_value=True):
-                linux_installer._install_systemd()
+        with (
+            patch("builtins.open", m),
+            patch("os.chmod") as mock_chmod,
+            patch("pathlib.Path.exists", return_value=True),
+        ):
+            linux_installer._install_systemd()
 
         # Check that file was opened for writing
         m.assert_called()
@@ -53,9 +56,12 @@ class TestServiceInstallerSystemdInstall:
         """Test that install calls daemon-reload."""
         mock_run.return_value = MagicMock(returncode=0)
 
-        with patch("builtins.open", mock_open()), patch("os.chmod"):
-            with patch("pathlib.Path.exists", return_value=True):
-                linux_installer._install_systemd()
+        with (
+            patch("builtins.open", mock_open()),
+            patch("os.chmod"),
+            patch("pathlib.Path.exists", return_value=True),
+        ):
+            linux_installer._install_systemd()
 
         # Check that daemon-reload was called
         calls = mock_run.call_args_list
@@ -69,9 +75,11 @@ class TestServiceInstallerSystemdInstall:
         """Test that permission error raises ServiceError."""
         mock_run.return_value = MagicMock(returncode=0)
 
-        with pytest.raises(ServiceError) as exc_info:
-            with patch("builtins.open", side_effect=PermissionError("Permission denied")):
-                linux_installer._install_systemd()
+        with (
+            pytest.raises(ServiceError) as exc_info,
+            patch("builtins.open", side_effect=PermissionError("Permission denied")),
+        ):
+            linux_installer._install_systemd()
 
         assert "Permission denied" in str(exc_info.value)
 
@@ -96,7 +104,9 @@ class TestServiceInstallerUninstall:
         """Test that uninstall stops the service."""
         mock_run.return_value = MagicMock(returncode=0)
 
-        with patch("pathlib.Path.exists", return_value=True), patch("pathlib.Path.unlink"):
+        with patch("pathlib.Path.exists", return_value=True), patch(
+            "pathlib.Path.unlink"
+        ):
             linux_installer._uninstall_systemd()
 
         # Check that stop was called
@@ -111,7 +121,9 @@ class TestServiceInstallerUninstall:
         """Test that uninstall disables the service."""
         mock_run.return_value = MagicMock(returncode=0)
 
-        with patch("pathlib.Path.exists", return_value=True), patch("pathlib.Path.unlink"):
+        with patch("pathlib.Path.exists", return_value=True), patch(
+            "pathlib.Path.unlink"
+        ):
             linux_installer._uninstall_systemd()
 
         # Check that disable was called
@@ -127,9 +139,10 @@ class TestServiceInstallerUninstall:
         mock_run.return_value = MagicMock(returncode=0)
 
         mock_unlink = MagicMock()
-        with patch("pathlib.Path.exists", return_value=True):
-            with patch("pathlib.Path.unlink", mock_unlink):
-                linux_installer._uninstall_systemd()
+        with patch("pathlib.Path.exists", return_value=True), patch(
+            "pathlib.Path.unlink", mock_unlink
+        ):
+            linux_installer._uninstall_systemd()
 
         # Check that unlink was called
         mock_unlink.assert_called()
@@ -142,10 +155,11 @@ class TestServiceInstallerUninstall:
         mock_run.return_value = MagicMock(returncode=0)
 
         mock_unlink = MagicMock()
-        with patch("pathlib.Path.exists", return_value=False):
-            with patch("pathlib.Path.unlink", mock_unlink):
-                # Should not raise even if file doesn't exist
-                linux_installer._uninstall_systemd()
+        with patch("pathlib.Path.exists", return_value=False), patch(
+            "pathlib.Path.unlink", mock_unlink
+        ):
+            # Should not raise even if file doesn't exist
+            linux_installer._uninstall_systemd()
 
         # Unlink should not be called if file doesn't exist
         mock_unlink.assert_not_called()
@@ -177,10 +191,12 @@ class TestServiceInstallerFilePermissions:
             nonlocal chmod_mode
             chmod_mode = mode
 
-        with patch("builtins.open", mock_open()):
-            with patch("os.chmod", side_effect=capture_chmod):
-                with patch("pathlib.Path.exists", return_value=True):
-                    linux_installer._install_systemd()
+        with (
+            patch("builtins.open", mock_open()),
+            patch("os.chmod", side_effect=capture_chmod),
+            patch("pathlib.Path.exists", return_value=True),
+        ):
+            linux_installer._install_systemd()
 
         # Check that chmod was called with restricted permissions
         assert chmod_mode is not None

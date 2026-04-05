@@ -3,14 +3,12 @@
 from __future__ import annotations
 
 import json
-import time
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 from .logging import get_logger
-from .models import ConflictStrategy, normalize_model_id
 
 if TYPE_CHECKING:
     from .unified_index import ModelInstance, UnifiedModelEntry
@@ -39,7 +37,7 @@ class ConflictRecord:
     resolution: str | None = None  # 'keep_original', 'keep_conflict', 'keep_both'
     winning_backend: str | None = None
     instances: list[ConflictInstance] = field(default_factory=list)
-    
+
     def to_dict(self) -> dict:
         return {
             "model_id": self.model_id,
@@ -60,7 +58,7 @@ class ConflictRecord:
                 for i in self.instances
             ],
         }
-    
+
     @classmethod
     def from_dict(cls, data: dict) -> ConflictRecord:
         return cls(
@@ -86,24 +84,24 @@ class ConflictRecord:
 
 class ConflictDatabase:
     """JSON-based conflict tracking."""
-    
+
     DB_FILENAME = "conflicts.json"
-    
+
     def __init__(self, metadata_dir: Path):
         self.db_path = Path(metadata_dir).resolve() / self.DB_FILENAME
         self._cache: dict[str, ConflictRecord] = {}
         self._ensure_directory()
         self._load()
-    
+
     def _ensure_directory(self) -> None:
         """Ensure the metadata directory exists."""
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
-    
+
     def _load(self) -> None:
         """Load conflicts from disk."""
         if not self.db_path.exists():
             return
-        
+
         try:
             data = json.loads(self.db_path.read_text())
             for conflict_data in data.get("conflicts", []):
@@ -111,7 +109,7 @@ class ConflictDatabase:
                 self._cache[record.model_id] = record
         except (json.JSONDecodeError, KeyError, OSError) as e:
             logger.error(f"Failed to load conflict database {self.db_path}", error=str(e))
-    
+
     def _save(self) -> None:
         """Persist to disk."""
         data = {
@@ -121,7 +119,7 @@ class ConflictDatabase:
             self.db_path.write_text(json.dumps(data, indent=2, default=str))
         except OSError as e:
             logger.error(f"Failed to save conflict database {self.db_path}", error=str(e))
-    
+
     def add_conflict(
         self,
         model_id: str,
@@ -130,7 +128,7 @@ class ConflictDatabase:
     ) -> None:
         """Add a new conflict record."""
         existing = self._cache.get(model_id)
-        
+
         if existing:
             # Add new instance to existing conflict
             existing.instances.append(
@@ -170,9 +168,9 @@ class ConflictDatabase:
                 ],
             )
             self._cache[model_id] = record
-        
+
         self._save()
-    
+
     def resolve_conflict(
         self,
         model_id: str,
@@ -183,23 +181,23 @@ class ConflictDatabase:
         record = self._cache.get(model_id)
         if not record:
             return False
-        
+
         record.status = "resolved"
         record.resolution = resolution
         record.winning_backend = winning_backend
         record.resolved_at = datetime.now()
-        
+
         self._save()
         return True
-    
+
     def get_unresolved(self) -> list[ConflictRecord]:
         """Get all unresolved conflicts."""
         return [r for r in self._cache.values() if r.status == "unresolved"]
-    
+
     def get_record(self, model_id: str) -> ConflictRecord | None:
         """Get a specific conflict record."""
         return self._cache.get(model_id)
-    
+
     def remove_conflict(self, model_id: str) -> bool:
         """Remove a conflict record."""
         if model_id not in self._cache:
@@ -215,13 +213,13 @@ class ConflictPreservationHandler:
     Files are left in place - only the conflict is recorded in the database.
     This prevents disrupting running backends that may be using the files.
     """
-    
+
     def __init__(self, metadata_dir: Path):
         self.metadata_dir = Path(metadata_dir).resolve()
         self.conflicts_db = ConflictDatabase(self.metadata_dir)
         # Track which conflicts we've already warned about to prevent log spam
         self._warned_conflicts: set[str] = set()
-    
+
     def handle_conflict(
         self,
         new_instance: ModelInstance,
@@ -230,7 +228,7 @@ class ConflictPreservationHandler:
         """
         Record a conflict in the database. Files are NOT renamed.
         Returns True if conflict was recorded successfully.
-        
+
         The files are left in place to avoid disrupting running backends.
         The user must resolve conflicts manually via 'fabric conflicts resolve'.
         """
@@ -242,14 +240,14 @@ class ConflictPreservationHandler:
                 if instance.backend_id == new_instance.backend_id:
                     # Already recorded, skip
                     return True
-        
+
         # Record the conflict
         self.conflicts_db.add_conflict(
             model_id=new_instance.model_id,
             new_instance=new_instance,
             existing_instances=existing_entry.instances,
         )
-        
+
         # Only warn once per conflict to prevent log spam
         warn_key = f"{new_instance.model_id}:{new_instance.backend_id}"
         if warn_key not in self._warned_conflicts:
@@ -260,13 +258,13 @@ class ConflictPreservationHandler:
                 backends=[i.backend_id for i in existing_entry.instances] + [new_instance.backend_id],
                 hint="Run 'fabric conflicts list' to review and resolve",
             )
-        
+
         return True
-    
+
     def clear_warned_cache(self) -> None:
         """Clear the warned conflicts cache (e.g., on restart)."""
         self._warned_conflicts.clear()
-    
+
     def get_unresolved_conflicts(self) -> list[ConflictRecord]:
         """Get all unresolved conflicts."""
         return self.conflicts_db.get_unresolved()

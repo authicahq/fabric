@@ -25,6 +25,7 @@ from .backends import (
     vLLMBackend,
 )
 from .core.config import ConfigLoader
+from .core.conflict_resolver import ConflictDatabase
 from .core.constants import (
     DEFAULT_LMSTUDIO_DIR,
     DEFAULT_LOCALAI_DIR,
@@ -37,6 +38,7 @@ from .core.exceptions import FabricError
 from .core.logging import get_logger, is_verbose, setup_logging
 from .core.models import (
     AppConfig,
+    ConflictStrategy,
     GPT4AllConfig,
     JanConfig,
     KoboldCppConfig,
@@ -48,8 +50,6 @@ from .core.models import (
     TextGenConfig,
     vLLMConfig,
 )
-from .core.conflict_resolver import ConflictDatabase
-from .core.models import ConflictStrategy, SyncMode
 from .core.multi_sync import MultiSourceSyncEngine
 from .core.service import ServiceInstaller
 from .core.sync import SyncEngine
@@ -669,7 +669,7 @@ def multi_sync(
         }
 
         config = loader.load(config_path=config_file, cli_args=cli_args)
-        
+
         # Verify we're in multi-source mode
         if not config.is_multi_source:
             console.print("[red]Error: Configuration is not in multi-source mode[/red]")
@@ -726,7 +726,7 @@ def multi_sync(
         # Watch mode
         if watch:
             console.print("\n[dim]Starting watch mode... Press Ctrl+C to stop[/dim]")
-            
+
             async def run_watcher() -> None:
                 def on_event(event) -> None:
                     try:
@@ -804,18 +804,18 @@ def conflicts_cmd(
 ) -> None:
     """Manage model conflicts."""
     from rich.prompt import Prompt
-    
+
     try:
         # Load configuration to get metadata directory
         loader = ConfigLoader()
         config = loader.load(config_path=config_file)
-        
+
         metadata_dir = config.sync.metadata_dir or Path.home() / ".fabric"
         db = ConflictDatabase(metadata_dir)
 
         if action == "list":
             unresolved = db.get_unresolved()
-            
+
             if not unresolved:
                 console.print("[green]No unresolved conflicts![/green]")
                 return
@@ -865,12 +865,7 @@ def conflicts_cmd(
             for i, instance in enumerate(record.instances, 1):
                 status_color = "green" if instance.status == "original" else "yellow"
                 size_mb = instance.size // 1024 // 1024
-                mtime_str = "unknown"
-                try:
-                    mtime_str = "datetime.fromtimestamp(instance.mtime).strftime('%Y-%m-%d %H:%M')"
-                except:
-                    pass
-                
+
                 console.print(
                     f"[{i}] [{status_color}]{instance.backend_id}[/{status_color}]: "
                     f"{size_mb}MB"
@@ -898,7 +893,7 @@ def conflicts_cmd(
                 # Keep specific version
                 winner = record.instances[choice - 1]
                 console.print(f"[green]Resolving: keeping {winner.backend_id} version[/green]")
-                
+
                 # Hardlink winner to all backends
                 for instance in record.instances:
                     if instance.backend_id != winner.backend_id:
@@ -912,14 +907,14 @@ def conflicts_cmd(
                             console.print(f"  Hardlinked to {instance.backend_id}")
                         except Exception as e:
                             console.print(f"  [red]Failed: {e}[/red]")
-                
+
                 db.resolve_conflict(model_id, "keep_specific", winner.backend_id)
                 console.print("[green]Conflict resolved![/green]")
-                
+
             elif choice == len(record.instances) + 1:
                 # Keep all - rename conflicts to permanent names
                 console.print("[green]Keeping all versions with backend suffixes[/green]")
-                
+
                 for instance in record.instances:
                     if instance.status == "conflict":
                         try:
@@ -930,7 +925,7 @@ def conflicts_cmd(
                             console.print(f"  Renamed to {new_name}")
                         except Exception as e:
                             console.print(f"  [red]Failed to rename: {e}[/red]")
-                
+
                 db.resolve_conflict(model_id, "keep_all")
                 console.print("[green]Conflict resolved![/green]")
             else:
@@ -938,13 +933,13 @@ def conflicts_cmd(
 
         elif action == "resolve-all":
             unresolved = db.get_unresolved()
-            
+
             if not unresolved:
                 console.print("[green]No unresolved conflicts![/green]")
                 return
 
             console.print(f"[yellow]Resolving {len(unresolved)} conflict(s) with strategy: {strategy.value}[/yellow]")
-            
+
             if dry_run:
                 console.print("[dim][DRY RUN] No changes made[/dim]")
                 for conflict in unresolved:
@@ -971,7 +966,7 @@ def conflicts_cmd(
                                 dst_path.unlink()
                             import os
                             os.link(src_path, dst_path)
-                    
+
                     db.resolve_conflict(conflict.model_id, f"keep_{strategy.value}", winner.backend_id)
                     resolved_count += 1
                     console.print(f"  [green]Resolved:[/green] {conflict.model_id} -> {winner.backend_id}")

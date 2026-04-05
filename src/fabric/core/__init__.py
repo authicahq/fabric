@@ -12,8 +12,8 @@ from .constants import (
 from .exceptions import (
     BackendError,
     ConfigError,
-    GGUFError,
     FabricError,
+    GGUFError,
     SyncError,
 )
 from .logging import get_logger, setup_logging
@@ -23,25 +23,20 @@ __all__ = [
     "DEFAULT_LMSTUDIO_DIR",
     "DEFAULT_LOCALAI_DIR",
     "DEFAULT_MODELS_DST",
-    # Constants
     "DEFAULT_MODELS_SRC",
     "PARTIAL_DOWNLOAD_EXTENSIONS",
     "PREFERRED_QUANTIZATIONS",
     "BackendError",
-    # Config
     "Config",
     "ConfigError",
     "ConfigLoader",
-    "GGUFError",
-    # Exceptions
     "FabricError",
+    "GGUFError",
     "ModelGroup",
-    # Models
     "ModelInfo",
     "SyncAction",
     "SyncError",
     "SyncEvent",
     "get_logger",
-    # Logging
     "setup_logging",
 ]

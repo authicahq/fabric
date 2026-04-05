@@ -562,7 +562,7 @@ class SyncConfig(BaseModel):
 
     # Mode selection
     mode: SyncMode = SyncMode.SINGLE_SOURCE
-    
+
     # Standard options
     dry_run: bool = False
     preserve_orphans: bool = False  # If True, don't remove files not in source
@@ -573,7 +573,7 @@ class SyncConfig(BaseModel):
     default_context_size: int | None = None  # None = use model/frontend default
     default_gpu_layers: int = -1  # -1 = use all available
     default_threads: int | None = None  # None = let backend decide
-    
+
     # Multi-source specific options
     metadata_dir: Path | None = Field(default=None)
     unified_storage_dir: Path | None = Field(default=None)
@@ -592,7 +592,7 @@ class SyncConfig(BaseModel):
         if v is not None:
             return v.expanduser().resolve()
         return v
-    
+
     @field_validator("metadata_dir", "unified_storage_dir")
     @classmethod
     def validate_metadata_dirs(cls, v: Path | None) -> Path | None:
@@ -614,12 +614,12 @@ class AppConfig(BaseModel):
     @classmethod
     def validate_source_dir(cls, v: Path) -> Path:
         return v.expanduser().resolve()
-    
+
     @property
     def is_multi_source(self) -> bool:
         """Check if running in multi-source mode."""
         return self.sync.mode == SyncMode.MULTI_SOURCE
-    
+
     @property
     def effective_source_dirs(self) -> list[Path]:
         """Get all source directories to watch."""
