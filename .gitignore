@@ -132,6 +132,9 @@ Thumbs.db
 # Project specific
 fabric.yaml
 fabric.yml
+link_models.yaml
+link_models.yml
+log
 *.gguf
 *.part
 *.tmp
